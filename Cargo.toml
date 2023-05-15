@@ -9,7 +9,8 @@ license = "MIT"
 readme = "README.md"
 keywords = ["sched", "scheduler", "affinity"]
 exclude = ["Cargo.lock", ".gitignore"]
+edition = "2021"
 
 [dependencies]
-errno = "0"
+errno = "0.3"
 libc = "0.2"

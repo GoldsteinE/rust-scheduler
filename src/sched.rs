@@ -1,9 +1,15 @@
 //! Set and get scheduling policies
-#[cfg(any(target_os = "linux", target_os = "android", target_os = "emscripten"))]
-use libc::{c_int, sched_param, sched_getscheduler, sched_setscheduler, SCHED_FIFO, SCHED_RR,
-           SCHED_BATCH, SCHED_IDLE, SCHED_OTHER};
+
+use std::io;
+
 #[cfg(any(target_os = "linux", target_os = "emscripten"))]
-use cpuset::CpuSet;
+use crate::cpuset::CpuSet;
+
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "emscripten"))]
+use libc::{
+    c_int, sched_getscheduler, sched_param, sched_setscheduler, SCHED_BATCH, SCHED_FIFO,
+    SCHED_IDLE, SCHED_OTHER, SCHED_RR,
+};
 
 /// Does not exist in libc yet for some reason. Can be removed when added to libc
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "emscripten"))]
@@ -27,13 +33,13 @@ pub enum Policy {
 
 /// Set the scheduling policy for this process
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "emscripten"))]
-pub fn set_self_policy(policy: Policy, priority: i32) -> Result<(), ()> {
+pub fn set_self_policy(policy: Policy, priority: i32) -> io::Result<()> {
     set_policy(0, policy, priority)
 }
 
 /// Set the scheduling policy for a process
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "emscripten"))]
-pub fn set_policy(pid: i32, policy: Policy, priority: i32) -> Result<(), ()> {
+pub fn set_policy(pid: i32, policy: Policy, priority: i32) -> io::Result<()> {
     let c_policy = match policy {
         Policy::Other => SCHED_OTHER,
         Policy::Fifo => SCHED_FIFO,
@@ -42,24 +48,26 @@ pub fn set_policy(pid: i32, policy: Policy, priority: i32) -> Result<(), ()> {
         Policy::Idle => SCHED_IDLE,
         Policy::Deadline => SCHED_DEADLINE,
     };
-    let params = sched_param { sched_priority: priority };
+    let params = sched_param {
+        sched_priority: priority,
+    };
     let params_ptr: *const sched_param = &params;
 
     match unsafe { sched_setscheduler(pid, c_policy, params_ptr) } {
         0 => Ok(()),
-        _ => Err(()),
+        _ => Err(io::Error::last_os_error()),
     }
 }
 
 /// Get the scheduling policy for this process
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "emscripten"))]
-pub fn get_self_policy() -> Result<Policy, ()> {
+pub fn get_self_policy() -> io::Result<Policy> {
     get_policy(0)
 }
 
 /// Get the scheduling policy for a process
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "emscripten"))]
-pub fn get_policy(pid: i32) -> Result<Policy, ()> {
+pub fn get_policy(pid: i32) -> io::Result<Policy> {
     match unsafe { sched_getscheduler(pid) } {
         SCHED_OTHER => Ok(Policy::Other),
         SCHED_FIFO => Ok(Policy::Fifo),
@@ -67,26 +75,26 @@ pub fn get_policy(pid: i32) -> Result<Policy, ()> {
         SCHED_BATCH => Ok(Policy::Batch),
         SCHED_IDLE => Ok(Policy::Idle),
         SCHED_DEADLINE => Ok(Policy::Deadline),
-        -1 => Err(()),
-        policy @ _ => panic!("Policy {} does not exist", policy),
+        -1 => Err(io::Error::last_os_error()),
+        policy => panic!("Policy {} does not exist", policy),
     }
 }
 
 /// Set the cpu affinity for the current thread See `set_affinity`.
 #[cfg(any(target_os = "linux", target_os = "emscripten"))]
-pub fn set_self_affinity(cpuset: CpuSet) -> Result<(), ()> {
+pub fn set_self_affinity(cpuset: CpuSet) -> io::Result<()> {
     set_affinity(0, cpuset)
 }
 
 /// Set the cpu affinity for a thread.
 #[cfg(any(target_os = "linux", target_os = "emscripten"))]
-pub fn set_affinity(pid: i32, cpuset: CpuSet) -> Result<(), ()> {
+pub fn set_affinity(pid: i32, cpuset: CpuSet) -> io::Result<()> {
     cpuset.set_affinity(pid)
 }
 
 /// Get the cpu affinity for the current thread. See `get_affinity`.
 #[cfg(any(target_os = "linux", target_os = "emscripten"))]
-pub fn get_self_affinity(num_cpus: usize) -> Result<CpuSet, ()> {
+pub fn get_self_affinity(num_cpus: usize) -> io::Result<CpuSet> {
     get_affinity(0, num_cpus)
 }
 
@@ -95,7 +103,7 @@ pub fn get_self_affinity(num_cpus: usize) -> Result<CpuSet, ()> {
 /// Create and return a `CpuSet` that has room for at least `num_cpus` and with those set
 /// according to the current affinity.
 #[cfg(any(target_os = "linux", target_os = "emscripten"))]
-pub fn get_affinity(pid: i32, num_cpus: usize) -> Result<CpuSet, ()> {
+pub fn get_affinity(pid: i32, num_cpus: usize) -> io::Result<CpuSet> {
     CpuSet::get_affinity(pid, num_cpus)
 }
 
@@ -103,7 +111,7 @@ pub fn get_affinity(pid: i32, num_cpus: usize) -> Result<CpuSet, ()> {
 #[cfg(any(target_os = "linux", target_os = "emscripten"))]
 mod tests {
     use super::{get_self_affinity, set_self_affinity};
-    use cpuset::CpuSet;
+    use crate::cpuset::CpuSet;
 
     #[test]
     fn test_set_get_self_affinity() {
@@ -112,7 +120,6 @@ mod tests {
         let read_mask = get_self_affinity(1).unwrap().as_u64().unwrap();
         assert_eq!(mask, read_mask);
     }
-
 
     #[test]
     fn test_set_get_self_affinity_2() {

@@ -2,6 +2,7 @@
 
 use libc::{c_void, cpu_set_t, sched_getaffinity, sched_setaffinity};
 use std::cmp;
+use std::io;
 use std::mem;
 use std::ptr;
 
@@ -20,7 +21,7 @@ impl CpuSet {
     pub fn new(num_cpus: usize) -> CpuSet {
         let elements = (num_cpus + MASK_BITS - 1) / MASK_BITS;
         let mask = vec![0; cmp::max(elements, 1)];
-        CpuSet { mask: mask }
+        CpuSet { mask }
     }
 
     /// Create a new `CpuSet` from a given mask. For example a u64 or a u8.
@@ -78,6 +79,7 @@ impl CpuSet {
 
     /// Get the number of bytes in the mask.
     /// Produces the same results as `CPU_ALLOC_SIZE`.
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         (MASK_BITS / 8) * self.mask.len()
     }
@@ -96,6 +98,7 @@ impl CpuSet {
 
     /// Represent this `CpuSet` as a `u64`.
     /// Will return an `Err` if the `CpuSet` is too large to be written to a `u64`
+    #[allow(clippy::result_unit_err)]
     pub fn as_u64(&self) -> Result<u64, ()> {
         let src_size = self.len();
         let out_size = mem::size_of::<u64>();
@@ -115,21 +118,21 @@ impl CpuSet {
     }
 
     /// Sets the affinity described by this `CpuSet` to a given `pid`.
-    pub fn set_affinity(&self, pid: i32) -> Result<(), ()> {
+    pub fn set_affinity(&self, pid: i32) -> io::Result<()> {
         match unsafe { sched_setaffinity(pid, self.len(), self.mask_ptr() as *const cpu_set_t) } {
             0 => Ok(()),
-            _ => Err(()),
+            _ => Err(io::Error::last_os_error()),
         }
     }
 
     /// Fetch the affinity for a given `pid` as a `CpuSet`.
-    pub fn get_affinity(pid: i32, num_cpus: usize) -> Result<CpuSet, ()> {
+    pub fn get_affinity(pid: i32, num_cpus: usize) -> io::Result<CpuSet> {
         let mut cpuset = CpuSet::new(num_cpus);
         match unsafe {
             sched_getaffinity(pid, cpuset.len(), cpuset.mut_mask_ptr() as *mut cpu_set_t)
         } {
             0 => Ok(cpuset),
-            _ => Err(()),
+            _ => Err(io::Error::last_os_error()),
         }
     }
 }
